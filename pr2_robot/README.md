@@ -12,7 +12,7 @@
 * pcl_callback() function
 * pr2_mover function
 * Creating ROS Node, Subscribers, and Publishers
-
+ 
 I will be explaning each part in this writeup.
 
 # Python Imports
@@ -118,7 +118,7 @@ The first step in the perception pipeline is to subscribe to the the camera data
 before we can process the data we need to convert it from **ROS PointCloud2** message to a **PCL PointXYZRGB** format using the following code:
 
 ```python
-cloud_filtered = ros_to_pcl(ros_pcl_msg)
+cloud = ros_to_pcl(pcl_msg)
 ```
 
 ## Statistical Outlier Filtering
@@ -128,19 +128,19 @@ First filter is the  **PCL’s Statistical Outlier Removal** filter. in this fil
 Code is as following:
 
 ```python
-    # Create a statistical filter object: 
-    outlier_filter = cloud_filtered.make_statistical_outlier_filter()
-    # Set the number of neighboring points to analyze for any given point
-    outlier_filter.set_mean_k(3)
-    # Set threshold scale factor
-    x = 0.00001
-    # Any point with a mean distance larger than global (mean distance+x*std_dev)
-    # will be considered outlier
+    cloud = XYZRGB_to_XYZ(cloud)
+    outlier_filter = cloud.make_statistical_outlier_filter()
+        # Set the number of neighboring points to analyze for any given point
+    outlier_filter.set_mean_k(5)
+        # Set threshold scale factor
+    x = 0.0005
+        # Any point with a mean distance larger than global (mean distance+x*std_dev) will be considered outlier
     outlier_filter.set_std_dev_mul_thresh(x)
-    # Call the filter function
-    cloud_filtered = outlier_filter.filter()
+        # Finally call the filter function for magic
+    outliers_removed = outlier_filter.filter()
+    outliers_removed = XYZ_to_XYZRGB(outliers_removed,[255,255,255])
 ```
-Mean K = 3 was the best value I found to almost remove all noise pixels. any value higher than 3 was leaving some of the noise pixels behind. x was selected to be 0.00001.
+Mean K = 5 was the best value I found to almost remove all noise pixels. any value higher than 3 was leaving some of the noise pixels behind. x was selected to be 0.0005.
 
 following image is showing result after removal of noise:
 
@@ -152,10 +152,8 @@ following image is showing result after removal of noise:
 
 ```python
     # Create a VoxelGrid filter object for our input point cloud
-    vox = cloud_filtered.make_voxel_grid_filter()
-    # Choose a voxel (also known as leaf) size
-    # 1 means 1mx1mx1m leaf size   
-    LEAF_SIZE = 0.005  
+    vox = outliers_removed.make_voxel_grid_filter()
+    LEAF_SIZE = 0.005
     # Set the voxel (or leaf) size  
     vox.set_leaf_size(LEAF_SIZE, LEAF_SIZE, LEAF_SIZE)
     # Call the filter function to obtain the resultant downsampled point cloud
@@ -179,7 +177,7 @@ In our case I have applied the filter two times, 1st one along **Z axis** to sel
     # Assign axis and range to the passthrough filter object.
     filter_axis = 'z'
     passthrough.set_filter_field_name(filter_axis)
-    axis_min = 0.6095
+    axis_min = 0.6
     axis_max = 1.1
     passthrough.set_filter_limits(axis_min, axis_max)
     # Use the filter function to obtain the resultant point cloud. 
@@ -227,10 +225,11 @@ code is as following:
     seg.set_distance_threshold(max_distance)
     # Call the segment function to obtain set of inlier indices and model coefficients
     inliers, coefficients = seg.segment()
-    # Extract inliers (Table)
-    extracted_table   = cloud_filtered.extract(inliers, negative=False)
-    # Extract outliers (Tabletop Objects)
-    extracted_objects = cloud_filtered.extract(inliers, negative=True)
+
+    # Extract inliers(Table)
+    cloud_table = cloud_filtered.extract(inliers, negative=False)
+    # Extract outliers(Objects)
+    cloud_objects = cloud_filtered.extract(inliers, negative=True)
 ```
 
 Image of the objects:
@@ -251,8 +250,8 @@ Last filtering step is to use **PCL's Euclidean Clustering** algorithm to segmen
     # Set tolerances for distance threshold 
     # as well as minimum and maximum cluster size (in points)
     ec.set_ClusterTolerance(0.03)
-    ec.set_MinClusterSize(10)
-    ec.set_MaxClusterSize(9000)
+    ec.set_MinClusterSize(30)
+    ec.set_MaxClusterSize(5000)
     # Search the k-d tree for clusters
     ec.set_SearchMethod(tree)
     # Extract indices for each of the discovered clusters
@@ -288,9 +287,9 @@ resulting objects image:
 Befor we can publish the processed point clouds we need to convert the format back from **PCL PointXYZRGB** to **ROS PointCloud2** message:
 
 ```python
-    ros_cloud_objects = pcl_to_ros(extracted_objects)
-    ros_cloud_table   = pcl_to_ros(extracted_table)
-    ros_cluster_cloud = pcl_to_ros(cluster_cloud)
+    pcl_msg_object = pcl_to_ros(cloud_objects)
+    pcl_msg_table = pcl_to_ros(cloud_table)
+    pcl_msg_cluster = pcl_to_ros(cluster_cloud)
 ```
 
 ## Publish ROS messages
@@ -298,9 +297,9 @@ Befor we can publish the processed point clouds we need to convert the format ba
 finally we publish to required topics:
 
 ```python
-    pcl_objects_pub.publish(ros_cloud_objects)
-    pcl_table_pub.publish(ros_cloud_table)
-    pcl_cluster_pub.publish(ros_cluster_cloud)
+    pcl_objects_pub.publish(pcl_msg_object)
+    pcl_table_pub.publish(pcl_msg_table)
+    pcl_cluster_pub.publish(pcl_msg_cluster)
 ```
 
 
@@ -614,12 +613,16 @@ if __name__ == '__main__':
     #----------------------------------------------------------------------------------
     # Create Publishers
     #----------------------------------------------------------------------------------
-    pcl_objects_pub      = rospy.Publisher("/pcl_objects"     , PointCloud2,          queue_size=1)
-    pcl_table_pub        = rospy.Publisher("/pcl_table"       , PointCloud2,          queue_size=1)
-    pcl_cluster_pub      = rospy.Publisher("/pcl_cluster"     , PointCloud2,          queue_size=1)
-    object_markers_pub   = rospy.Publisher("/object_markers"  , Marker,               queue_size=1)
+    pcl_static_out_pub = rospy.Publisher("/pcl_static_out", PointCloud2, queue_size=1)
+    pcl_vox_pub = rospy.Publisher("/pcl_vox", PointCloud2, queue_size=1)
+    pcl_pass_through_pub = rospy.Publisher("/pcl_pass_through", PointCloud2, queue_size=1)
+    pcl_objects_pub = rospy.Publisher("/pcl_objects", PointCloud2, queue_size=1)
+    pcl_table_pub = rospy.Publisher("/pcl_table", PointCloud2, queue_size=1)
+    pcl_cluster_pub = rospy.Publisher("/pcl_cluster", PointCloud2, queue_size=1)
+
+    # Publisher for detected object with markers,,,,,,,,,,,,,,,,,
+    object_markers_pub = rospy.Publisher("/object_markers", Marker, queue_size=100)
     detected_objects_pub = rospy.Publisher("/detected_objects", DetectedObjectsArray, queue_size=1)
-    pr2_base_mover_pub   = rospy.Publisher("/pr2/world_joint_controller/command", Float64, queue_size=10)
 
     # Initialize color_list
     get_color_list.color_list = []
