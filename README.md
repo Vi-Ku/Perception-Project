@@ -3,15 +3,8 @@
 This repository contains a Robot Operating System (ROS) perception pipeline implementation for identifying and classifying objects from a noisy tabletop environment, using point-cloud data from an RGB-D sensor. This is used for picking, sorting and relocating of the objects into bins using a PR2 robot. This project uses ROS with Python for project 3 of the [Udacity - Robotics NanoDegree Program](https://www.udacity.com/robotics)
 
 ## For Detailed Explaination of the Entire Perception pipeline Implementation go to this [Document](./pr2_robot/README.md)
-## Prerequisitif len(detected_objects)>0:
-        try:
-            pr2_mover(detected_objects)
-        except rospy.ROSInterruptException:
-            pass
-    else:
-        rospy.logwarn('No detected objects !!!')
-    
-    return
+
+## Prerequisite
 
 1. [Ubuntu](https://www.ubuntu.com) OS, as at the time of this writing, ROS only works on Ubuntu.
 
@@ -127,6 +120,12 @@ The project ends when the robot has successfully picked and placed all objects i
 ## Usage
 
 Given a cluttered tabletop scenario, the perception pipeline will identify target objects from a so-called “Pick-List” in a particular order, pick up those objects and place them into their corresponding dropbox.
+
+> ## Below is the Image of the Robot Picking the object.
+<p align="center"> <img src="./misc/pick-robot.png"> </p>
+
+> ## Below is the Image of the Robot Picking the object.
+<p align="center"> <img src="./misc/place-robot.png"> </p>
 
 ## Contributing
 
